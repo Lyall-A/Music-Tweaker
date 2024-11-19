@@ -1,0 +1,57 @@
+[
+    {
+        "id": "nightcore",
+        "name": "Nightcore",
+        "description": "idk",
+        "options": {
+            "nightcore": true
+        }
+    },
+    {
+        "id": "more",
+        "name": "adsjda",
+        "description": "idk",
+        "options": {
+            "pitch": 1.4
+        }
+    },
+    {
+        "id": "alvin",
+        "name": "adsjda",
+        "description": "idk",
+        "options": {
+            "pitch": 2,
+            "tempo": 0.8
+        }
+    },
+    {
+        "id": "fuckywucky",
+        "options": {
+            "pitchsdkajd": 1.2,
+            "bitrate": "64k",
+            "format": "mp3",
+            "bass": 10,
+            "volume": 200
+        }
+    },
+    {
+        "id": "fuckywucky++",
+        "options": {
+            "pitchsdkajd": 1.2,
+            "bitrate": "48k",
+            "format": "mp3",
+            "bass": 15,
+            "volume": 200
+        }
+    },
+    {
+        "id": "poopy",
+        "options": {
+            "pitchsdkajd": 1.2,
+            "bitrate": "48k",
+            "format": "mp3",
+            "bassasd": 15,
+            "volume": 200
+        }
+    }
+]
