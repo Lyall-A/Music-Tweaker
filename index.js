@@ -10,12 +10,31 @@ const argOptions = [
     { short: ["fp"], long: ["ffprobe"], description: "FFprobe path", default: "/bin/ffprobe" },
     { short: ["nc"], long: ["nightcore", "speed", "spedup"], description: "Speed up song", bool: true },
     { long: ["slowed"], description: "Slow down song", bool: true },
+    { long: ["reverse"], description: "Reverse audio", bool: true },
+    { name: "noiseReduction", long: ["noise_reduction"], description: "Noise reduction", bool: true },
+    { long: ["flanger"], description: "Add flanger effect", bool: true },
+    { long: ["phaser"], description: "Add phaser effect", bool: true },
     { long: ["pitch"], description: "Pitch multiplier, doesn't change speed" },
     { long: ["bass"], description: "Bass boost" },
-    { short: ["v", "vol"], long: ["volume"], description: "Volume multiplier" },
+    { long: ["pulsate"], description: "Pulsate" },
+    { name: "audioFilters", short: ["af"], long: ["audio_filters"], description: "Add more audio filters" },
+    { short: ["hp"], long: ["highpass"], description: "High-pass" },
+    { short: ["lp"], long: ["lowpass"], description: "Low-pass" },
+    { short: ["v", "vol"], long: ["volume"], description: "Change volume" },
+    { short: ["b:a"], long: ["bitrate"], description: "Bitrate" },
     { short: ["c:a"], long: ["codec"], description: "Output codec" },
     { short: ["f"], long: ["format"], description: "Output format" },
     { short: ["o"], long: ["output"], description: "Output path" },
+
+    // for fucked up stuff idk (TODO: create presets)
+    // { name: "nightcore", default: true },
+    // { name: "bitrate", default: "32k" },
+    // { name: "bitrate", default: "64k" },
+    // { name: "bitrate", default: "128k" },
+    // { name: "format", default: "mp3" },
+    // { name: "bass", default: "10" },
+    // { name: "bass", default: "5" },
+    // { name: "volume", default: "200" },
 ];
 for (const options of argOptions) {
     const keyIndex = processArgs.findIndex(arg => {
@@ -50,19 +69,30 @@ const getFormat = (input) => ffprobe(input).then(i => i.format.format_name);
     if (!fs.existsSync(inputPath)) return console.log(`Input file '${inputPath}' doesn't exist`);
     const sampleRate = await getSampleRate(inputPath);
     const formats = await getFormat(inputPath).then(i => i.split(","))
-
-    const outputFormat = cliArgs.format || formats.length ? formats.includes(inputExtName) ? inputExtName : formats[0] : formats[0]; // ffprobe can return multiple formats, look for file format or use the first one
+    
+    const outputFormat = cliArgs.format || (formats.length ? formats.includes(inputExtName) ? inputExtName : formats[0] : formats[0]); // ffprobe can return multiple formats, look for file format or use the first one
     const outputPath = cliArgs.output || path.join(__dirname, `${path.basename(inputPath, `.${inputExtName}`)}.${outputFormat}`);
     const audioFilters = [];
+    const args = [];
 
+    // audio filters
     if (cliArgs.pitch) audioFilters.push(`asetrate=${sampleRate}*${cliArgs.pitch}`);
-    if (cliArgs.volume) audioFilters.push(`volume=${cliArgs.volume}`);
-    if (cliArgs.nightcore) audioFilters.push(`asetrate=${sampleRate}*1.25`);
+    if (cliArgs.volume) audioFilters.push(`volume=${cliArgs.volume / 100}`);
+    if (cliArgs.nightcore) audioFilters.push(`asetrate=${sampleRate}*1.25,aresample=${sampleRate}`);
     if (cliArgs.slowed) audioFilters.push(`asetrate=${sampleRate}*0.9`);
     if (cliArgs.bass) audioFilters.push(`bass=g=${cliArgs.bass}`);
-
-    const args = [];
+    if (cliArgs.reverse) audioFilters.push(`areverse`);
+    if (cliArgs.highpass) audioFilters.push(`highpass=f=${cliArgs.highpass}`);
+    if (cliArgs.lowpass) audioFilters.push(`lowpass=f=${cliArgs.lowpass}`);
+    if (cliArgs.pulsate) audioFilters.push(`apulsator=hz=${cliArgs.pulsate}`);
+    if (cliArgs.noiseReduction) audioFilters.push(`afftdn`);
+    if (cliArgs.flanger) audioFilters.push(`flanger`);
+    if (cliArgs.phaser) audioFilters.push(`aphaser`);
+    if (cliArgs.audioFilters) audioFilters.push(cliArgs.audioFilters);
+    
+    // other args
     if (audioFilters.length) args.push("-af", audioFilters.join(","));
+    if (cliArgs.bitrate) args.push("-b:a", cliArgs.bitrate);
     if (cliArgs.codec) args.push("-c:a", cliArgs.codec);
     args.push("-f", outputFormat); // format is needed since outputting to pipe
 
@@ -73,7 +103,7 @@ const getFormat = (input) => ffprobe(input).then(i => i.format.format_name);
 
     console.log(`Finished! Saved at '${outputPath}'`);
 
-    ffplay(outputPath); // funny testing
+    ffplay(outputPath, ["-autoexit"]); // funny testing
 })();
 
 // run ffmpeg
@@ -119,9 +149,9 @@ function ffprobe(input, args = [], inputBuffer) {
 function ffplay(input, args = [], inputBuffer) {
     args = ["-i", inputBuffer ? "-" : input, ...args].filter((value, index, array) => array.indexOf(value) === index);
     return new Promise((resolve, reject) => {
-        const ffplayProcess = cp.spawn("/bin/ffplay", args);
+        const ffplayProcess = cp.spawn("/bin/ffplay", args, { detached: true, stdio: "ignore" });
         if (inputBuffer) ffprobeProcess.stdin.write(inputBuffer);
-        ffplayProcess.stdout.on("data", i => process.stdout.write(i));
+        // ffplayProcess.stderr.on("data", i => process.stdout.write(i));
         ffplayProcess.on("exit", code => {
             if (code > 0) return reject(`FFplay exited with code ${code}`);
             resolve();
