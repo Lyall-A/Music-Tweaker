@@ -2,6 +2,8 @@ const cp = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
+const debug = false;
+
 // Get args
 const processArgs = process.argv.slice(2);
 const argOptions = [
@@ -59,13 +61,15 @@ for (const options of argOptions) {
 };
 const cliArgs = Object.fromEntries(argOptions.map(i => ([i.name || i.long?.[0] || i.short?.[0], i.value])));
 
+debugLog("cliArgs:", cliArgs);
+
 const presets = require("./presets.json");
 const preset = cliArgs.preset ? presets.find(i => i.id === cliArgs.preset || i.name === cliArgs.preset) : null;
 if (cliArgs.preset && !preset) return console.log(`Couldn't find preset '${cliArgs.preset}!`);
 
 // idk just functions to make things easier
-const getSampleRate = (input) => ffprobe(input).then(i => parseInt(i.streams[0].sample_rate));
-const getFormat = (input) => ffprobe(input).then(i => i.format.format_name);
+const getSampleRate = (ffprobeInfo) => parseInt(ffprobeInfo.streams[0].sample_rate);
+const getFormat = (ffprobeInfo) => ffprobeInfo.format.format_name;
 
 // main
 (async function main() {
@@ -73,9 +77,10 @@ const getFormat = (input) => ffprobe(input).then(i => i.format.format_name);
     const inputExtName = path.extname(inputPath).substring(1);
 
     if (!fs.existsSync(inputPath)) return console.log(`Input file '${inputPath}' doesn't exist`);
-    const sampleRate = await getSampleRate(inputPath);
-    const formats = await getFormat(inputPath).then(i => i.split(","));
-    
+    const ffprobeInfo = await ffprobe(inputPath);
+    const sampleRate = getSampleRate(ffprobeInfo);
+    const formats = getFormat(ffprobeInfo).split(",");
+
     const outputFormat = getOption("format") || (formats.length ? formats.includes(inputExtName) ? inputExtName : formats[0] : formats[0]); // ffprobe can return multiple formats, look for file format or use the first one
     const outputPath = getOption("output") || path.join(__dirname, `${path.basename(inputPath, `.${inputExtName}`)}.${outputFormat}`);
     const audioFilters = [];
@@ -96,7 +101,7 @@ const getFormat = (input) => ffprobe(input).then(i => i.format.format_name);
     if (getOption("flanger")) audioFilters.push(`flanger`);
     if (getOption("phaser")) audioFilters.push(`aphaser`);
     if (getOption("audioFilters")) audioFilters.push(getOption("audioFilters"));
-    
+
     // other args
     if (audioFilters.length) args.push("-af", audioFilters.join(","));
     if (getOption("bitrate")) args.push("-b:a", getOption("bitrate"));
@@ -106,11 +111,11 @@ const getFormat = (input) => ffprobe(input).then(i => i.format.format_name);
     console.log(`Using FFmpeg args '${args.join(" ")}'`);
 
     const output = await ffmpeg(inputPath, args);
-    fs.writeFileSync(outputPath, output.outputData);
+    fs.writeFileSync(outputPath, output.data);
 
     console.log(`Finished! Saved at '${outputPath}'`);
 
-    ffplay(outputPath, ["-autoexit"]); // funny testing
+    // ffmpeg(outputPath, ["-f", "pulse"]); // play to pulse output (testing)
 })();
 
 function getOption(key) {
@@ -118,56 +123,56 @@ function getOption(key) {
 }
 
 // run ffmpeg
-function ffmpeg(input, args = [], inputBuffer) {
-    args = ["-i", inputBuffer ? "-" : input, ...args, "-"].filter((value, index, array) => array.indexOf(value) === index);
-    return new Promise((resolve, reject) => {
-        const ffmpegProcess = cp.spawn(getOption("ffmpeg"), args);
-        if (inputBuffer) ffmpegProcess.stdin.write(inputBuffer);
-        const data = [];
-        const logData = [];
-        ffmpegProcess.stdout.on("data", i => data.push(i));
-        ffmpegProcess.stderr.on("data", i => logData.push(i));
+function ffmpeg(input = "-", args = [], output = "-") {
+    args = ["-i", input, ...args, output].filter((value, index, array) => array.indexOf(value) === index);
+    debugLog(`Attemping to spawn FFmpeg instance with args '${args.join(" ")}'`);
+    const ffmpegProcess = cp.spawn(getOption("ffmpeg"), args);
+    const dataArray = [];
+    const logArray = [];
+    const promise = new Promise((resolve, reject) => {
+        ffmpegProcess.stdout.on("data", i => dataArray.push(i));
+        ffmpegProcess.stderr.on("data", i => logArray.push(i));
         ffmpegProcess.on("exit", code => {
-            const outputData = Buffer.concat(data);
-            const log = Buffer.concat(logData).toString();
+            debugLog(`FFmpeg instance exited with code ${code}`);
+            const data = Buffer.concat(dataArray);
+            const log = Buffer.concat(logArray).toString();
             if (code > 0) return reject(`FFmpeg exited with code ${code}: ${log}`);
-            return resolve({ outputData, log });
+            return resolve({ data, log, code });
         });
     });
+    promise.stdin = ffmpegProcess.stdin;
+    promise.stdout = ffmpegProcess.stdout;
+    promise.stderr = ffmpegProcess.stderr;
+    return promise;
 }
 
 // run ffprobe
-function ffprobe(input, args = [], inputBuffer) {
-    args = ["-i", inputBuffer ? "-" : input, ...args, "-print_format", "json", "-show_format", "-show_streams"].filter((value, index, array) => array.indexOf(value) === index);
-    return new Promise((resolve, reject) => {
-        const ffprobeProcess = cp.spawn(getOption("ffprobe"), args);
-        if (inputBuffer) ffprobeProcess.stdin.write(inputBuffer);
-        const data = [];
-        ffprobeProcess.stdout.on("data", i => data.push(i));
+function ffprobe(input = "-", args = []) {
+    args = ["-i", input, ...args, "-print_format", "json", "-show_format", "-show_streams"];
+    debugLog(`Attemping to spawn FFprobe instance with args '${args.join(" ")}'`);
+    const ffprobeProcess = cp.spawn(getOption("ffprobe"), args);
+    const dataArray = [];
+    const promise = new Promise((resolve, reject) => {
+        ffprobeProcess.stdout.on("data", i => dataArray.push(i));
         ffprobeProcess.on("exit", code => {
+            debugLog(`FFprobe instance exited with code ${code}`);
+            const data = Buffer.concat(dataArray);
             if (code > 0) return reject(`FFprobe exited with code ${code}`);
             try {
-                const json = JSON.parse(Buffer.concat(data));
+                const json = JSON.parse(data);
                 resolve(json);
             } catch (err) {
-                reject("Failed to parse JSON");
+                reject(`Failed to parse JSON: ${data}`);
             }
         });
     });
+    promise.stdin = ffprobeProcess.stdin;
+    promise.stdout = ffprobeProcess.stdout;
+    promise.stderr = ffprobeProcess.stderr;
+    return promise;
 }
 
-// run ffplay (for testing)
-function ffplay(input, args = [], inputBuffer) {
-    args = ["-i", inputBuffer ? "-" : input, ...args].filter((value, index, array) => array.indexOf(value) === index);
-    return new Promise((resolve, reject) => {
-        const ffplayProcess = cp.spawn("/bin/ffplay", args);
-        console.log(`Playing '${input}' with FFplay`);
-        // const ffplayProcess = cp.spawn("/bin/ffplay", args, { detached: true, stdio: "ignore" });
-        if (inputBuffer) ffprobeProcess.stdin.write(inputBuffer);
-        ffplayProcess.stderr.on("data", i => process.stdout.write(i));
-        ffplayProcess.on("exit", code => {
-            if (code > 0) return reject(`FFplay exited with code ${code}`);
-            resolve();
-        });
-    });
+function debugLog(...msgs) {
+    if (!debug) return;
+    console.log("[DEBUG]", ...msgs);
 }
