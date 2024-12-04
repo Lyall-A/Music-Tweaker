@@ -7,6 +7,7 @@ const debug = false;
 // Get args
 const processArgs = process.argv.slice(2);
 const argOptions = [
+    { short: ["h"], long: ["help"], description: "This", bool: true },
     { short: ["i"], long: ["input"], description: "Input file", required: true },
     { short: ["fm"], long: ["ffmpeg"], description: "FFmpeg path", default: "/bin/ffmpeg" },
     { short: ["fp"], long: ["ffprobe"], description: "FFprobe path", default: "/bin/ffprobe" },
@@ -57,7 +58,8 @@ for (const options of argOptions) {
             options.value = !/^--?.+/.test(processArgs[keyIndex + 1]) ? processArgs[keyIndex + 1] || null : options.default || null;
         }
     }
-    if (options.required && options.value === null) return console.log(`Missing argument '${options.long}'!`);
+    if (options.long === "help" && options.value) return displayHelp();
+    if (options.required && options.value === null) return displayHelp();
 };
 const cliArgs = Object.fromEntries(argOptions.map(i => ([i.name || i.long?.[0] || i.short?.[0], i.value])));
 
@@ -65,6 +67,7 @@ debugLog("cliArgs:", cliArgs);
 
 const presets = require("./presets.json");
 const preset = cliArgs.preset ? presets.find(i => i.id === cliArgs.preset || i.name === cliArgs.preset) : null;
+
 if (cliArgs.preset && !preset) return console.log(`Couldn't find preset '${cliArgs.preset}!`);
 
 // idk just functions to make things easier
@@ -175,4 +178,8 @@ function ffprobe(input = "-", args = []) {
 function debugLog(...msgs) {
     if (!debug) return;
     console.log("[DEBUG]", ...msgs);
+}
+
+function displayHelp() {
+    return console.log(argOptions.map(i => `${i.short ? `${i.short.map(i => `-${i}`).join(" ")} ` : ""}${i.long ? `${i.long.map(i => `--${i}`).join(" ")} ` : ""}- ${i.description}`).join("\n"));
 }
