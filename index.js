@@ -11,6 +11,8 @@ const argOptions = [
     { short: ["i"], long: ["input"], description: "Input file", required: true },
     { short: ["fm"], long: ["ffmpeg"], description: "FFmpeg path", default: "/bin/ffmpeg" },
     { short: ["fp"], long: ["ffprobe"], description: "FFprobe path", default: "/bin/ffprobe" },
+    { long: ["ffplay"], description: "FFplay path", default: "/bin/ffplay" },
+    { long: ["play"], description: "Play song using FFplay", bool: true },
     { short: ["nc"], long: ["nightcore", "speed", "spedup"], description: "Speed up song", bool: true },
     { long: ["slowed"], description: "Slow down song", bool: true },
     { long: ["reverse"], description: "Reverse audio", bool: true },
@@ -118,7 +120,8 @@ const getFormat = (ffprobeInfo) => ffprobeInfo.format.format_name;
 
     console.log(`Finished! Saved at '${outputPath}'`);
 
-    // ffmpeg(outputPath, ["-f", "pulse"]); // play to pulse output (testing)
+    if (getOption("play")) cp.spawn(getOption("ffplay"), [outputPath]);
+    // if (getOption("play")) ffmpeg(outputPath, ["-f", "pulse"]);
 })();
 
 function getOption(key) {
